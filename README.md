@@ -6,7 +6,8 @@ Le jeu de données vient de l'[Institute of Museum and Library](https://www.imls
 
 
 # Bibliographie
-![](R_logo.svg.png =250x10)
+
+<img src="R_logo.svg.png" alt="" width="200"/>
 
 
 Alboukadel Kassambara and Fabian Mundt (2017). factoextra: Extract and
