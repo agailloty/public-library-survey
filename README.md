@@ -4,6 +4,7 @@ Il s'agit d'un projet que j'ai réalisé dans le cadre du cours de Data Mining. 
 
 Le jeu de données vient de l'[Institute of Museum and Library](https://www.imls.gov/research-evaluation/data-collection/public-libraries-survey).
 
+## A lire [ici](https://agailloty.github.io/public-library-survey/index.html)
 
 # Bibliographie
 
