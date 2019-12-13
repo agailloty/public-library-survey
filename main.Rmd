@@ -1,0 +1,741 @@
+---
+title: "Projet Data Mining"
+author : Axel-Cleris Gailloty
+output: 
+  #word_document:
+  bookdown::gitbook:
+    #toc : true
+    fig_caption: yes
+    #reference_docx: "template.docx"
+    output_dir : "docs"
+---
+\pagebreak
+
+# Introduction
+
+\fontfamily{cmr}
+\fontsize{12}{22}
+\selectfont
+\nobreakspace
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(dpi=300)
+```
+
+```{r include=FALSE}
+# Package management
+pkgs <- c("readr", "ggplot2", "FactoMineR", 
+          "factoextra", "knitr", "magrittr", "reshape2", "dplyr")
+pkgs_to_install <- pkgs[!(pkgs %in% installed.packages()[,"Package"])]
+
+if(length(pkgs_to_install)) {
+  install.packages(pkgs_to_install)
+  lapply(pkgs_to_install, library, character.only = TRUE)}else{
+    lapply(pkgs, library, character.only = TRUE)
+  }
+```
+
+Aux Etats-Unis l’Enquête sur les bibliothèques publiques, en anglais Public Library Survey (PLS) est menée chaque année par l’Institut des services de muséologie et de bibliothèque dans le but d'examiner comment les bibliothèques publiques changent pour répondre aux besoins des usagers. 
+
+Les enquêtes réalisées sont destinées à l'endroit des politiques publiques afin de les aider à prendre des décisions. Les enquêtes permettent de collecter une importante quantité de données.
+Toutefois les analyses qui sont faites de ces données depuis la mise en place de l'enquête ne sont que descriptives et graphiques. Les analyses ne s'intéressent qu'à un phénomène à la fois et ne prennent pas compte les interactions qui peuvent exister entre les caractéristiques des bibliothèques.  
+
+C'est pourquoi dans le cadre de ce projet de Data Mining, je me propose de faire une étude approfondie du sujet en allant au-delà de simples statistiques descriptives pour réaliser des analyses factorielles des données.
+
+Le travail est divisé en trois parties principales : dans la première partie nous analysons les données sous l'angle des statistiques descriptives. Nous présentons notamment les indicateurs de tendance centrale et les corrélations entre les variables. Ensuite nous analysons les données grâce aux méthodes d'analyses factorielles. A partir des méthodes d'analyses factorielles nous faisons dans la troisième partie une classification ascendante hiérarchique des données.
+
+
+
+\pagebreak
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+states <- read_csv("states.csv")
+colnames(states) <- gsub(" ", "_", tolower(colnames(states)))
+libraries <- read_csv("libraries.csv")
+colnames(libraries) <- gsub(" ", "_", tolower(colnames(libraries)))
+colnames(libraries)[65] <- "childrens_programs"
+```
+
+```{r include=FALSE}
+view <- subset(states, 
+               select = c("state", "state_population",
+                "region_code", "library_visits", "internet_computer_use"))
+colnames(view) <- paste0("ST_", colnames(view))
+colnames(view)[1] <- "state"
+# Merge the datasets
+merged_df <- merge(libraries, view, by = "state")
+merged_df$ST_region_code <- as.character(merged_df$ST_region_code)
+merged_df$ST_region_code <- paste0("st_", merged_df$ST_region_code)
+```
+
+```{r include=FALSE}
+statistiques_desc <- function(data){
+  data <- data[sapply(data, is.numeric)]
+  colonnes <- colnames(data)
+  
+  vecteur_des_moyennes <- vector(mode = "numeric")
+  for (col in colonnes){
+    vecteur_des_moyennes[col] <- mean(data[[col]], na.rm = TRUE)
+  }
+  
+  vecteur_des_ecart_types <- vector(mode = "numeric")
+  for (col in colonnes){
+    vecteur_des_ecart_types[col] <- sd(data[[col]], na.rm = TRUE)
+  }
+  
+  vecteur_des_min <- vector(mode = "numeric")
+  for (col in colonnes){
+    vecteur_des_min[col] <- min(data[[col]], na.rm = TRUE)
+  }
+  
+  vecteur_des_max <- vector(mode = "numeric")
+  data <- data[sapply(data, is.numeric)]
+  for (col in colonnes){
+    vecteur_des_max[col] <- max(data[[col]], na.rm = TRUE)
+    
+  }
+  
+  vecteur_des_medianes <- vector(mode = "numeric")
+  for (col in colonnes){
+    vecteur_des_medianes[col] <- median(data[[col]], na.rm =TRUE)
+  }
+  
+  #missings <- vector(mode = "numeric")
+  #for (col in colonnes){
+    #missings[col] <- sum(is.na(data[[col]]))
+  #}
+  
+    
+  data.frame(Min = vecteur_des_min, Moyenne = vecteur_des_moyennes, 
+             Ecart_type = vecteur_des_ecart_types, Max = vecteur_des_max,
+             Médiane = vecteur_des_medianes)
+}
+```
+
+# Les données
+
+Les données sur lesquelles j'ai décidé de travailler sont de 2014. Elles portent sur 9255 bibliothèques publiques pour 74 variables.  
+
+Dans les faits il y a deux jeux de données fournis par l'Institute of Museum and Library. Le premier correspond aux données brutes de l'enquête et des estimations faites sur les caractéristiques des bibliothèques. Le second jeu de données contient des données sur les Etats américains et fournissent notamment des données démographiques et économiques des Etats dans lesquels se trouvent les bibliothèques. Les deux jeux de données sont reliés par une clé étrangère qui permet de les fusionner si besoin.  
+
+Vu que mon intérêt porte principalement sur les bibliothèques en question, j'ai décidé de me focaliser sur le premier jeu de donnée. J'ai fusionné les deux jeux de données pour ne recueillir que quelques informations démographiques et économiques des Etats pour aider à situer le contexte géographique et économique des bibliothèques.
+
+Pour le projet, je me suis limité à 22 variables. La liste des variables que j'ai sélectionnées est en annexe de ce projet.
+
+## Actions réalisées pour nettoyer les données
+
+Bien que le nettoyage des données ait pris une grande partie du temps consacré au projet, voilà sommairement les actions que j'ai réalisées pour permettre l'analyse des données.
+
+Remplacement des données numériques négatives par des valeurs manquantes : les valeurs manquantes contenues dans le jeu de données sont codées par des nombres négatifs comme -3 et -1. Je les ai remplacées par des NA que R comprend.
+
+Normalisation des noms des colonnes : certaines colonnes contenaient des caractères spéciaux dans leurs noms.
+
+Suppression des données manquantes : Bien qu'il existe des méthodes d'imputation pour remplacer les données, j'ai jugé nécessaire de ne pas les utiliser car les valeurs sont souvent des caractéristiques qu'on ne peut pas prédire (l'Etat dans lequel se trouve la bibliothèque, sa structure administrative, le nombre de collection audio ...)
+
+
+
+
+
+```{r include=FALSE}
+columns_to_keep <- c("library_name",  "administrative_structure", "print_collection", "audio_collection", "county_population",
+        "interlibrary_relationship", "downloadable_audio", "physical_video",
+        "hours_open", "print_subscriptions", "registered_users", "interlibrary_loans_provided", "interlibrary_loans_received", "childrens_programs", "young_adult_programs", "internet_computer_use", 
+        "ST_state_population", "ST_region_code", "legal_basis", "wireless_internet_sessions", "branch_libraries", "local_government_operating_revenue", "local_cooperative_agreements", "digital_collection", "mls_librarians")
+
+pca_data <- merged_df[, columns_to_keep]
+options(digits = 2)
+```
+
+# Statistiques descriptives
+
+```{r include=FALSE}
+convert_to_na <- function(vector, value = -3){
+  vector[vector == value] <- NA
+  return(vector)
+}
+
+
+convert_to_na_df <- function(data, value = -3){
+  cols <- colnames(data)
+  for (col in cols){
+    data[[col]] <- convert_to_na(data[[col]], value = value)
+  }
+  return(data)
+}
+```
+
+```{r include=FALSE}
+pca_data <- convert_to_na_df(pca_data, value = -3)
+pca_data <- convert_to_na_df(pca_data, value = -1)
+```
+
+Les statistiques descriptives nous permettent de comprendre la distribution de nos données. Nous allons présenter les indicateurs de moments et de tendances centrales tels le minimum, la moyenne, l'écart-type, la médiane et le maximum.  
+Pour les variables qualitatives, nous affichons le nombre de modalités et la modalité la plus fréquente pour la colonne (mode).
+
+
+```{r echo=FALSE}
+pca_data <- convert_to_na(pca_data)
+pca_data$library_name <- make.unique(pca_data$library_name)
+pca_data <- na.omit(pca_data)
+knitr::kable(
+  statistiques_desc(pca_data),
+  caption = "Statistiques descriptives des colonnes numériques")
+```
+
+Ce qu'on peut constater de l'observation de ce tableau est que l'amplitude des colonnes numériques varie grandement. Une chose est importante à noter aussi : l'écart-type de chacune des colonnes est très élevée, cela indique une grande disparité autour de la moyenne des colonnes. A priori nous ne pouvons pas dire si ces colonnes sont normalement distribuées.
+
+Il existe aussi dans le jeu de données des variables catégorielles. Nous allons afficher les statistiques associées. 
+
+```{r include=FALSE}
+getmode <- function(v) {
+   uniqv <- unique(v)
+   uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+
+cat_describe <- function(data){
+  # Grab non-numeric data
+  non_num <- !sapply(data, is.numeric)
+  data <- data[, non_num]
+  data[] <- lapply(data, function(x) if(is.factor(x)) as.character(x) else x)
+  cols <- colnames(data)
+  
+  modalities <- vector(mode = "numeric")
+  for (col in cols){
+    modalities[col] <- length(unique(data[[col]]))
+  }
+  
+  most_frequent <- vector(mode = "numeric")
+  for (col in cols){
+    most_frequent[[col]] <- getmode(data[[col]])
+    
+  }
+  
+  nb_most_frequent <- vector(mode = "numeric")
+  for (col in cols){
+    nb_most_frequent[[col]] <- sum(data[[col]]==getmode(data[[col]]), 
+                                   na.rm = TRUE)
+  }
+  
+  missings <- vector(mode = "numeric")
+  for (col in cols){
+    missings[col] <- sum(is.na(data[[col]]))
+  }
+  
+  res <- data.frame(Modalities = modalities, 
+                    MostFrequent = most_frequent, 
+                    NbFrequent =nb_most_frequent, 
+                    Missing = missings,
+                    stringsAsFactors = FALSE)
+  return(res)
+  
+}
+```
+
+
+```{r echo=FALSE}
+knitr::kable(
+  cat_describe(pca_data),
+  caption = "Liste des variables qualitatives")
+```
+
+
+# Analyse des corrélations 
+
+L'analyse des corrélations nous permet de déterminer le niveau de dépendance qui existe entre les variables numériques du jeu. Pour chaque paire de variable nous calculons le coefficient de corrélation qui résume leur dépendance. Les corrélations entre les variables s'afficheront dans une matrice des corrélations. Pour faciliter la lecture de la matrice des corrélations, nous pouvons la représenter graphiquement. 
+
+```{r echo=FALSE, fig.height=12, fig.width=10}
+library(ggcorrplot)
+ggcorrplot(
+cor(pca_data[sapply(pca_data, is.numeric)], 
+    use = "complete.obs"), lab = TRUE, type = "lower", title = "Graphique des corrélations") + theme(plot.title = element_text(size = 30))
+pca_data <- data.frame(pca_data, row.names = "library_name", stringsAsFactors = FALSE)
+```
+
+Le nombre d'individus étant supérieur à 30, les coefficients de corrélation que nous obtenons sur ce graphique sont significatifs.  
+L'analyse des corrélations entre les variables quantitatives nous montre que globalement la distribution des corrélations est assez variée. D'une part nous avons des corrélations assez élevées (plus de 0.75) et d'autres qui sont faibles. Toutefois nous observons que toutes les corrélations sont positives, autrement dit toutes les variables sont **positivement** liées dans une relation linéaire. 
+A partir d'ici nous pouvons prédire que cela pourra éventuellement avoir un impact sur les analyses factorielles que nous effectuerons.
+
+
+# Analyse de données
+
+## L'analyse en composantes principales
+
+L'analyse en composantes principales (ACP) est une méthode factorielle de réduction de dimension des données quantitatives complexes. L'ACP se base sur la matrice des variances-covariances. Elle cherche à résumer la dispersion des données. 
+Le jeu de données sur lequel ce projet est réalisé est composé à majorité des données quantitatives, comme nous venons de voir dans les statistiques descriptives et les corrélations. Donc le choix d'une ACP pour analyser les données est justifié.
+L'analyse en composante principale que nous effectuons est centrée et réduite. Le but de centrer et réduire les données est de donner le même poids à chaque variable présente dans le jeu de données.
+
+Le jeu de données initial contient 9225 observations, mais pour des raisons d'efficience (notamment pour la classification ascendante hiérarchique) nous n'allons utiliser qu'un échantillon tiré aléatoirement de 3000 individus du jeu de données. Ainsi nous travaillons sur un jeu de données de 3000 individus et 22 variables.
+
+
+```{r echo=FALSE}
+set.seed(500)
+pca_data <- pca_data[sample(nrow(pca_data), 3000),]
+first_pca <- PCA(pca_data, quali.sup = c(1,5,17,18), graph = FALSE, scale.unit = TRUE)
+```
+
+Nous allons réaliser une première ACP sur le jeu de données, en prenant toutes les colonnes numériques comme des colonnes actives (colonnes qui entrent dans le calcul) et les colonnes *catégoriques structure administratives*, *les relations avec les autres bibliothèques*, *le code de la région* et *le statut juridique des bibliothèques*. Voici les résultats de cette première ACP :
+
+```{r echo=FALSE, fig.height=6, fig.width=10}
+fviz_eig(first_pca, ylab = "", main = "Pourcentage des variances expliquées", addlabels = TRUE) +
+  theme(plot.title = element_text(size = 30))
+```
+
+Ce graphique présente le pourcentage des variances expliquées par les axes factoriels. Le premier axe explique à lui seul 50% des variances, autrement dit, si on ne retient que cet axe on peut expliquer 50% des différences qui existent entre les bibliothèques. Or nous observons que le deuxième axe n'explique que 10%, on peut se douter qu'il y a un effet de taille dans l'analyse en composante principale. 
+
+Regardons le cercle des corrélations de l'ACP. Ce cercle montre la force de l'association des variables à deux axes factoriels (ici les axes 1 et 2).
+
+```{r echo=FALSE, fig.height=8, fig.width=10}
+fviz_pca_var(first_pca, repel = TRUE) +
+  theme(plot.title = element_text(size = 30))
+```
+
+On observe que toutes les variables sont positivement corrélées à l'axe 1 et très peu sont négativement corrélées à l'axe 2. Il s'agit d'un effet de taille.
+
+## Observation d'un effet de taille
+
+On observe un effet de taille dans une ACP sur les variables lorsque tous les points sont regroupés du même côté d'un point factoriel. La première analyse que nous venons de faire montre clairement un effet de taille car tous les points sont positivement corrélés à l'axe 1 du plan factoriel.  
+
+Il existe plusieurs façons de corriger un effet de taille. La méthode la plus utilisée pour corriger l'effet de taille est de transformer les variables quantitatives en valeurs catégoriques et  utiliser une autre méthode d'analyse factorielle, en l'occurence l'analyse des correspondances multiples (ACM). 
+
+Nous allons commencer dans un premier temps, à nous inspirer des statistiques descriptives des variables quantitatives et de la distribution des colonnes pour transformer les données numériques en données qualitatives. 
+
+## Correction de l'effet de taille
+
+Il convient dans un premier d'observer la distribution de chaque variable pour se faire une idée du nombre de modalités qu'on peut créer pour chaque variable.
+
+```{r echo=FALSE, fig.height=10, fig.width=12, message=FALSE, warning=FALSE }
+num_pca <- pca_data[sapply(pca_data, is.numeric)]
+num_pca["id"] <- "id"
+
+num_pca %>% melt(id.var = "id") %>%
+  ggplot(aes(x = value)) + geom_histogram(bins = 30)  + labs(x = NULL, y = NULL) + 
+  facet_wrap(~variable, scale = "free", ncol = 4)
+```
+
+Au regard de ce graphique nous observons une polarisation extrême de la distribution de colonnes numériques. Notre but dans la correction de l'effet de taille est de transformer les colonnes numériques en des catégories, autrement dit, nous cherchons à discrétiser ces colonnes. **Or en ACM la part de l'inertie totale due à une modalité est d'autant plus grande que la modalité est rare**, autrement dit les modalités peu fréquentes ont plus de poids que les modalités fréquentes, donc il est important que nous nous assurions que les intervalles que nous allons créer aient des fréquences à peu près équivalentes. Cela implique que d'enlever les bibliothèques qui prennent des valeurs extrêmes afin de ne pas biaiser les indicateurs de moments (quartiles) sur lesquels nous nous basons pour diviser les colonnes numériques et que ces bibliothèques constituent à elles seules des catégories du fait des valeurs qu'elles prennent.
+
+Pour enlever les bibliothèques ayant les valeurs extrêmes, nous allons utiliser la méthode de `3 sigmas`, bien que les colonnes ne soient pas distribuées selon une loi normale. Cette méthode permet d'enlever les observations qui ont des valeurs supérieures à 3 fois l'écart-type de la colonne.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Remove extreme values
+outlier <- function(x, threshold = 3){
+  mean_x <- mean(x, na.rm = TRUE)
+  sd_x <- sd(x, na.rm = TRUE)
+  
+  val <-  abs( mean_x - ( threshold * sd_x))
+  which(x > val)
+}
+
+find_outliers <- function(df, threshold = 3){
+  df <- df[sapply(df, is.numeric)]
+  idx <- unique(
+    unlist(lapply(df, outlier, threshold = threshold)))
+  df[idx,]
+}
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+idx <- unlist(sapply(num_pca, outlier, threshold = 3), use.names = FALSE)
+idx <- sort(unique(idx))
+num_inter <- num_pca[-idx,]
+```
+
+Après avoir appliqué la méthode des 3 sigmas, voilà la nouvelle distribution des colonnes.
+
+```{r echo=FALSE, fig.height=8, fig.width=10, message=FALSE, warning=FALSE}
+num_inter %>% melt(id.var = "id") %>%
+  ggplot(aes(x = value)) + geom_histogram(bins = 50)  + labs(x = NULL, y = NULL) + 
+  facet_wrap(~variable, scale = "free", ncol = 4)
+```
+
+Le fait d'enlever les observations extrêmes a permis de réduire l'amplitude des colonnes, toutefois la distribution n'est pas normale.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+cat_cols <- !sapply(pca_data, is.numeric)
+pca_data_cat <- pca_data[, cat_cols]
+num_cols <- sapply(pca_data, is.numeric)
+pca_data_num <- pca_data[, num_cols]
+pca_data_normed <- sweep(pca_data_num, 1, pca_data[["county_population"]], "/")
+```
+
+
+
+
+Certaines colonnes numériques peuvent être facilement converties en colonnes catégoriques binaires. La variable `branch_libraries` qui représente le nombre de branches qu'une bibliothèque possède peut être transformée pour prendre la valeur 1 si elle possède des branches et 0 sinon.  
+
+Nous ferons ainsi pour les colonnes similaires. 
+Nous transformons les variables `interlibrary_loans_provided` et `interlibrary_loans_received` en une seule variable qui indique si oui ou non la bibliothèque prête plus qu'elle n'en emprunte.
+Et pour les autres variables, nous allons les discrétiser selon leurs indicateurs de moments, principalement la médiane et les autres quartiles.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+pca_data_original <- pca_data
+out_idx <- unlist(lapply(pca_data, outlier, threshold = 3))
+out_idx <- unique(sort(out_idx))
+pca_data <- pca_data[-out_idx,]
+pca_data$interlib_diff <- pca_data$interlibrary_loans_provided - pca_data$interlibrary_loans_received
+pca_data <- na.omit(pca_data)
+colonnes <- c("young_adult_programs", 
+              "wireless_internet_sessions", 
+              "local_cooperative_agreements", "physical_video",
+              "audio_collection", "branch_libraries")
+
+for (col in colonnes){
+  pca_data[[col]] <- ifelse(pca_data[[col]] > 0, "yes", "no")
+}
+
+pca_data$print_collection <- ifelse(pca_data$print_collection < 25000, "<25000", "25000+")
+pca_data$digital_collection <- ifelse(pca_data$digital_collection < 7500,
+                                      "<7500", "7500+")
+## Diviser certaines variables
+
+pca_data$ST_state_population <- cut(pca_data$ST_state_population, 
+        breaks = c(500000, 4000000, 10000000, 50000000), 
+        labels = c("500K-4M", "4M-10M", "10M+"))
+
+pca_data$county_population <- cut(pca_data$county_population, 
+  breaks = c(100, 65000, 300000, 15000000), 
+  labels = c("<=65000", "65K-300K", "300K+"))
+
+pca_data$internet_computer_use <- cut(pca_data$internet_computer_use, 
+breaks = c(0, 2500, 6000, 20000, 3192495),
+labels = c("low", "medium", "high", "very_high"))
+
+pca_data$downloadable_audio <- cut(pca_data$downloadable_audio, 
+        breaks = c(0, 50, 500, 10e8), 
+        labels = c("small", "medium", "high"))
+
+pca_data$hours_open <- cut(pca_data$hours_open, 
+            breaks = c(80, 2340, 3150, 400000), 
+            labels = c("<2340_h", "2340-3150h", ">3150_h"))
+
+pca_data$mls_librarians <- cut(pca_data$mls_librarians, breaks = 3,
+                               label = c("<5", "5-10", "+10"))
+#
+pca_data$interlib_diff <- ifelse(pca_data$interlib_diff >= 0, "positive", "negative")
+
+mca_data <- pca_data[, -which(names(pca_data) %in% c("interlibrary_loans_provided",
+              "interlibrary_loans_received", "interlib_diff"))]
+mca_data <- na.omit(mca_data)
+```
+
+# L'analyse des correspondances multiples
+
+L’analyse des correspondances multiples est une technique descriptive visant à résumer l’information contenu dans un grand nombre de variables afin de faciliter l’interprétation des corrélations existantes entre ces différentes variables. On cherche à savoir quelles sont les modalités corrélées entre elles.
+
+```{r echo=FALSE}
+acm <- MCA(mca_data, quanti.sup = c(9, 10, 11, 19), graph = FALSE, quali.sup = 15)
+```
+
+```{r echo=FALSE, fig.height=6, fig.width=10}
+fviz_eig(acm, addlabels = TRUE, 
+         main = "Pourcentage des variances expliquées", ylab = "") +
+  theme(plot.title = element_text(size = 30))
+```
+
+En ACM, les pourcentages expliqués par les dimensions sont en général plus faibles que pour une ACP. Cela est due principalement au fait que toutes les modalités des colonnes sont transformées elles-mêmes en colonnes. Ce qui fait exploser le nombre des colonnes. 
+
+Nous allons dans le cadre de ce projet retenir 4 dimensions pour expliquer la variance entre les bibliothèques. Ces 4 dimensions expliquent en total 31.3% de la variance totale. Le choix de 4 dimensions nous permet également de représenter 2 plans factoriels sur lesquels nous observons la forme que prend le nuage des points des individus.
+
+Etant donné le grand nombre des variables créées par l'ACM, nous n'allons représenter pour chaque plan factoriel que les 20 premières contributions pour ne pas rendre illisible le graphique.  
+
+## Analyse graphique
+
+
+### Premier plan factoriel
+
+```{r echo=FALSE, fig.height=8, fig.width=12}
+fviz_mca_var(acm, repel = TRUE, col.var = "contrib", 
+             select.var = list(contrib = 20),
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             title = "Premier plan factoriel", labelsize = 7) +
+  theme(plot.title = element_text(size = 30))
+```
+
+Le premier plan factoriel fait sortir une opposition assez nette entre les bibliothèques deux catégories de bibliothèques : d'un côté, on observe des bibliothèques possédant des branches (branch_libraries_yes), qui ont un catalogue de plus de 25000 oeuvres imprimées et une utilisation très importante d'Internet situées à droite du cadran et de l'autre côté des bibliothèques qui n'ont pas de branches, qui ouvrent moins 2340 heures (hours_open <2340_h) et qui sont des bibliothèques à guichet unique (administrative_structure = Single Outlet (S0)).
+
+
+Représentons également le nuage de points des individus sur le premier plan factoriel en coloriant les individus (bibliothèques) selon qu'ils possèdent ou non une branche.
+
+```{r echo=FALSE, fig.height=8, fig.width=12}
+fviz_mca_ind(acm, repel = TRUE, geom = "point", col.ind = "cos2",
+             habillage = "branch_libraries",
+      title = "Nuage des points des individus sur le premier plan factoriel") + 
+  theme(plot.title = element_text(size = 30))
+```
+
+Nous comprenons mieux à l'aide de ce nuage des points des individus colorié pourquoi la variable branch_libraries est d'une grande contribution. On observe qu'elle discrimine nettement les bibliothèques. A gauche se trouvent des bibliothèques qui n'ont pas de branches et à droite celles qui en ont.
+
+### Second plan factoriel
+
+```{r echo=FALSE, fig.height=8, fig.width=12}
+fviz_mca_var(acm, repel = TRUE, col.var = "contrib", 
+             select.var = list(contrib = 20), axes = c(3, 4),
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             title = "Second plan factoriel", labelsize = 8) + 
+  theme(plot.title = element_text(size = 30))
+```
+
+Le second plan factoriel met en opposition la taille des Etats dans lesquels se trouvent les bibliothèques, le nombre de libraires diplômés, le téléchargement des fichiers audio, la structure administrative des bibliothèques et leurs statuts juridiques.  
+A droite du plan se trouvent des bibliothèques qui se situent dans les Etats de plus de plus de 10 million d'habitats (10M+). Ce sont des bibliothèques gérées par les comtés (CO) et qui ont un statut d'association à but non lucratif (NP). A gauche se trouvent des bibliothèques plutôt modernes, qui utilisent Internet, qui sont gérées par la municipalité (CI) ou par les quartiers (LD). 
+
+Nous détaillerons davantage les caractéristiques des bibliothèques lorsqu'elles seront classifiées hiérarchiquement en fonction de leurs similitudes.
+
+Représentons le nuage des points bibliothèques sur le deuxième axe factoriel.
+
+```{r echo=FALSE, fig.height=8, fig.width=12}
+fviz_mca_ind(acm, axes = c(3, 4), repel = TRUE, geom = "point", col.ind = "cos2",
+             habillage = "ST_state_population",
+        title = "Nuage des points des individus sur le second plan factoriel") +
+  theme(plot.title = element_text(size = 30))
+```
+
+Ce second nuage colorié par la taille des Etats montre une saturation. Cela signifie que le pouvoir explicatif de ce plan est plus faible que le premier. En effet le 3e axe résume 6.6% de l'inertie du nuage et le 4e résume 4.3%. Les résultats sont donc à relativiser. Il y a beaucoup de chevauchement et on ne voit pas de tendance dominante.
+
+## Résultats tabulaires
+
+Le package que nous utilisons pour l'analyse des données faire ressortir dans de nombreux tableaux les résultats intermédiaires à l'interprétation des graphiques que nous venons de commenter. Les tableaux des résultats contiennent par exemple la qualité de représentation des modalités et des individus. La plupart des informations contenues dans ces tableaux aident à affiner l'interprétation mais elles peuvent également être redondantes. Nous allons afficher uniquement le $cos^2$ qui représente la qualité de représentation d'une modalité sur un axe factoriel. Le reste des résultats est placé dans les annexes.
+
+```{r echo=FALSE}
+kable(acm$var$cos2)
+```
+
+Le $cos^2$ montre la qualité de représentation des modalités sur les axes factoriels où ils sont projettés. Le cosinus carré prend une valeur entre 0 et 1. Nous voyons grâce à ce tableau que plusieurs des modalités ont de très faibles $cos^2$, seules quelques unes sont bien représentées. Sur l'axe 1, les modalités MO, SO, <2500, 2500+, <2340h, >3150h, internet_use, branch_libraries (yes et no) ont des cosinus carré supérieurs à 0.4, cela montre qu'ils sont assez bien représentés et cela signifie que ces modalités caractérisent bien l'axe. Ce qu'on observe également c'est que la valeur des $cos^2$ diminue à mesure qu'on passe à des axes qui ont de faibles contributions. Sur l'axe 2, le cosinus carré le plus élevé est de 0.52 et est prise par la modalité NP. Les autres modalités ayant des qualités de représentation assez élevée sont <7500 et 7500+ qui représente le niveau de collection digitale des bibliothèques.
+
+### Variables quantitatives supplémentaires
+
+Nous avons spécifié dans l'ACM des variables quantitatives supplémentaires (ou encore illustratives) pour permettre d'affiner l'interprétation. Une variable illustrative n'intervient pas dans le calcul mais aide à placer dans les résultats de l'ACM dans un contexte.
+
+```{r echo=FALSE}
+kable(acm$quanti.sup$coord)
+```
+
+On observe que l'effet de taille constatée dans l'ACP persiste avec les variables quantitatives illustratves. Toutes les variables sont positivement corrélées avec le premier axe factoriel.
+
+```{r echo=FALSE}
+split_into_n_levels <- function(data, n, labels){
+  num_data <- data[sapply(data, is.numeric)]
+  cols <- colnames(num_data)
+  for (col in cols){
+    if (labels == "auto"){
+      num_data[[col]] <- cut(num_data[[col]], breaks = n)
+    } else{
+      num_data[[col]] <- cut(num_data[[col]], breaks = n, labels = labels)
+    }
+    
+  }
+  return(num_data)
+}
+```
+
+
+# Classification ascendante hiérarchique (CAH)
+
+La classification ascendante hiérarchique (CAH) est une technique statistique visant à partitionner une population en différents sous-groupes, appelé aussi classes ou clusters. La CAH cherche à ce que les individus au sein d'une même classe soient les plus proches possibles (homogénéité intra-classe) tandis que les classes soient les plus dissemblables possibles. [^1]  
+
+[^1]: Classification ascendante hiérarchique (CAH), analyse-R
+
+```{r echo=FALSE}
+acm.clust <- HCPC(acm, nb.clust = -1, graph = FALSE)
+```
+
+
+```{r echo=FALSE, fig.height=6, fig.width=12}
+fviz_cluster(acm.clust, geom = "point", main = "Graphique des clusters premier plan factoriel") +
+  theme(plot.title = element_text(size = 30))
+```
+
+Le nombre des clusters est déterminé automatiquement lors de la classification, car c'est ce qui sépare le mieux les bibliothèques. Toutefois on observe qu'il y a quelques chevauchements.
+
+```{r echo=FALSE, fig.height=6, fig.width=12}
+fviz_cluster(acm.clust, geom = "point", main = "Graphique des clusters second plan factoriel", axes = c(3,4)) +
+  theme(plot.title = element_text(size = 30))
+```
+
+A mesure que le pouvoir explicatif des axes décroit, la classification des individus se chevauche. 
+
+```{r echo=FALSE}
+fviz_dend(acm.clust, show_labels = FALSE,
+          main = "Dendogramme des clusters", ylab = "") +
+  theme(plot.title = element_text(size = 20))
+```
+
+Affichons le nombre d'individus dans chaque cluster.
+
+```{r echo=FALSE}
+kable(table(acm.clust$data.clust$clust), 
+      col.names = c("Cluster", "Individus"))
+```
+
+
+## Caractéristiques des clusters
+
+## Cluster 1
+
+Le tableau des résultats décrivant les caractéristiques des clusters contient 5 colonnes et autant de lignes que les variables et modalités qui influencent ce cluster. Voici une description de ce que représente chaque colonne :
+
+- *Cla/mod* indique quelle part (pourcentage) de tous les individus présentant cette modalité se retrouve dans cette classe (ce cluster, cette catégorie). Autrement dit, c'est la fréquence du cluster dans la modalité.
+
+- *Mod/cla* indique quelle part (pourcentage) de tous les individus du cluster présentent cette modalité. C'est la fréquence de la modalité dans le cluster. [^3]
+
+- *Global* : indique le nombre total d'occurrence de la modalité.
+
+- *p.value* : indique la significativité de la modalité dans la construction de la classe.
+
+- *v.test* : indique la statistique du test. C'est un moyen alternatif pour lire la significativité de la modalité. Une v.test supérieure en valeur absolue à 1.96 indique la modalité est significative à un seuil d'erreur inférieur à 5%.
+
+Or ce tableau peut être très long car il contient la liste de toutes les modalités qui contribuent à définir le cluster et comme nous avons vu dans le graphique des clusters, il y a des chevauchements donc il serait pertinent de ne relever que les modalités les plus exclusives à ce cluster. Nous déterminons ces modalités à partir de la colonne *Cla/mod* qui indique la part des individus qui possèdent la modalité étudiée se trouvant dans le cluster. La logique est que si un fort pourcentage des individus possèdent la modalité c'est que cette modalité leur est propre.
+
+```{r echo=FALSE}
+clus_1 <- data.frame(acm.clust$desc.var$category$`1`)
+kable(clus_1[order(clus_1$Cla.Mod, decreasing = TRUE),][1:20,])
+```
+
+
+Le cluster 1 est constitué de bibliothèques ayant dans leur catalogue moins de 25000 œuvres imprimées. Ce sont des bibliothèques situées dans des petites comtés (moins de 65000 habitants) et qui ouvrent en moyenne 6 heures et demi par jour (week-end y compris). Ces bibliothèques n'ont pas dans leur catalogue des vidéos ou des fichiers audio. Elles ne sont pas spécifiques à une région en particulier car elles sont étendue dans 4 régions différentes.font partie des Etats de taille moyenne (500.000 à 4 million d'habitants. Elles ont une faible utilisation d'Internet et sont à grande partie des structures administratives à guichet unique (administrative_structure=SO).
+
+
+
+
+## Cluster 2
+
+```{r echo=FALSE}
+clus_2 <- data.frame(acm.clust$desc.var$category$`2`)
+kable(clus_2[order(clus_2$Cla.Mod, decreasing = TRUE),][1:15,])
+```
+
+Les bibliothèques qui se trouvent dans le cluster 2 ouvrent en moyenne entre 
+6.5 heures et 9h par jour (week-end y compris). Elles ont une utilisation très importante d'Internet. Elle sont localisées dans les comtés de plus de 300 mille habitants et dans les grands Etats américains (+ 10 million d'habitants). Le nombre de leur catalogue d'oeuvres imprimées dépasse les 25000. Elles ont dans leurs catalogues des fichiers vidéo et audio. Ce sont des bibliothèques qui font partie d'une fédération des bibliothèques (interlibrary_relationship = ME). Légalement ces bibliothèques ont le statut d'associations à but non lucratif (legal_basis = NP)
+
+## Cluster 3
+
+```{r echo=FALSE}
+clus_3 <- data.frame(acm.clust$desc.var$category$`3`)
+kable(clus_3[order(clus_3$Cla.Mod, decreasing = TRUE),][1:15,])
+```
+
+Ces bibliothèques se situent à la fois dans des Etats de taille moyennes (4 à 10 millions d'habitants) et dans des grands Etats (plus de 10 million). Elles sont à la fois des bibliothèques de quartiers. Ce qui est significativement spécifique aux bibliothèques de ce cluster c'est le fait d'avoir des branches externes et que ce sont à majorité des bibliothèques ayant plusieurs guichets. Ces bibliothèques ouvrent plus de 9h par jours (y compris les week-end) et n'ont pas de relation avec les autres bibliothèques. Elles ont un grand nombre de libraires ayant des diplômes supérieures (mls_librarians >10). Les bibliothèques de ce cluster ne sont pas caractérisées par un seul statut juridique, car elles peuvent être multi-juridictionnelles (legal_basis = MJ), gérée par le comté (legal_basis = CO) ou sont encore des bibliothèques de quartier (legal_basis = LD).
+
+## Individus parangons et individus spécifiques
+
+Le commentaire des clusters ressort les caractéristiques des bibliothèques. Or nous observons qu'il y a des chevauchements entre les classes. En effet, plusieurs des modalités sont partagées par les 3 classes. Nous serons donc intéressés de savoir les caractéristiques de "l'individu moyen" de chaque classe. Autrement dit l'individu parangon de chaque classe.
+
+Un individu parangon est un individu dont les coordonnées sont les plus proches du centre de gravité du groupe. Le profil de cet individu caractérise alors le groupe auquel il appartient. [^2] 
+
+Nous allons afficher pour chaque classe les individus parangons.
+
+Les individus parangons du cluster 1 :
+
+```{r echo=FALSE}
+print_para <- function(x){
+  para <- stack(x)
+  colnames(para) <- c("Distance", "Individus")
+  kable(para)
+}
+print_para(acm.clust$desc.ind$para$`1`)
+```
+
+Les parangons du cluster 2 :
+
+```{r echo=FALSE}
+print_para(acm.clust$desc.ind$para$`2`)
+```
+
+Les parangons du cluster 3
+
+```{r echo=FALSE}
+print_para(acm.clust$desc.ind$para$`3`)
+```
+
+Trouvons les caractéristiques des clusters dans le jeu de données.
+
+```{r echo=FALSE}
+
+print_para_df <- function(x, df){
+  para <- as.character(stack(x)$ind)
+  kable(t(df[para,]))
+}
+para_1 <- as.character(stack(acm.clust$desc.ind$para$`1`)$ind)[1]
+para_2 <- as.character(stack(acm.clust$desc.ind$para$`2`)$ind)[1]
+para_3 <- as.character(stack(acm.clust$desc.ind$para$`3`)$ind)[1]
+
+
+paras <- c(para_1, para_2, para_3)
+rm(para_1, para_2, para_3)
+kable(t(mca_data[paras,]))
+```
+
+
+
+
+
+[^2]: Eléments de classification, François Chesneau
+
+
+# Conclusion
+
+Cette analyse sur les bibliothèques nous a permis de ressortir que les caractéristiques non directement observables par une analyse statistique descriptive simple peuvent ressortir si nous appliquons une analyse factorielle qui prend simultanément en compte plusieurs attributs des bibliothèques. Les axes factoriels que nous trouvés montrent une  
+
+Il ressort tout de même une faiblesse dans cette analyse à cause de l'extrême distrbution des colonnes du départ. Cette distribution des colonnes et le fait que toutes les colonnes sont corrélées positivement a conduit a un effet de taille où le premier axe résume plus de 50% de la variance totale. L'analyse des correspondances multiples que nous avons réalisée ensuite montre aussi des faiblesse car j'ai réalisé après avoir refait plusieurs fois la même analyse sur des échantillons différents et sur des segmentations différentes qu'il existe une très grande différence dans les résultats. Cela montre que la variance des colonnes n'est pas stable et qu'il serait mieux de prendre l'exhaustivité des données dans l'analyse.
+
+
+\pagebreak
+
+# Bibliographie
+Alboukadel Kassambara and Fabian Mundt (2017). factoextra: Extract and
+  Visualize the Results of Multivariate Data Analyses. R package version 1.0.5.
+  http://www.sthda.com/english/rpkgs/factoextra 
+
+*Datafile Documentation* https://www.imls.gov/research-evaluation/data-collection/public-libraries-survey
+
+H. Wickham. ggplot2: Elegant Graphics for Data Analysis. Springer-Verlag New
+  York, 2016.
+  
+JJ Allaire and Yihui Xie and Jonathan McPherson and Javier Luraschi and Kevin
+  Ushey and Aron Atkins and Hadley Wickham and Joe Cheng and Winston Chang and
+  Richard Iannone (2019). rmarkdown: Dynamic Documents for R. R package version
+  1.16. URL https://rmarkdown.rstudio.com.
+
+  Yihui Xie and J.J. Allaire and Garrett Grolemund (2018). R Markdown: The
+  Definitive Guide. Chapman and Hall/CRC. ISBN 9781138359338. URL
+  https://bookdown.org/yihui/rmarkdown.
+  
+R Core Team (2019). R: A language and environment for statistical computing.
+  R Foundation for Statistical Computing, Vienna, Austria. URL
+  https://www.R-project.org/.
+  
+Sebastien Le, Julie Josse, Francois Husson (2008). FactoMineR: An R Package
+  for Multivariate Analysis. Journal of Statistical Software, 25(1), 1-18.
+  10.18637/jss.v025.i01
+  
+
+
+
+\pagebreak
+
+# Annexes
+
+*Annexe 1 : Coordonnées des modalités des colonnes*
+
+```{r echo=FALSE}
+kable(acm$var$coord)
+```
+
+*Annexe 2 : Les v-tests des modalités*
+
+Certaines des modalités ne sont significatives sur certains axes.
+
+```{r echo=FALSE}
+kable(acm$var$v.test)
+```
+
+
+*Annexe 3 : Statistiques descriptives des colonnes discrétisées.*
+```{r echo=FALSE}
+kable(cat_describe(mca_data))
+```
+
+
+
+

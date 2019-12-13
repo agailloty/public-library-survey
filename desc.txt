@@ -1,0 +1,38 @@
+–Administrative Entity with multiple direct service outlets where administrative offices are 142 1.5 142 1.5
+separate
+MO–Administrative Entity with multiple direct service outlets where administrative offices are not 1,607 17.3 1,749 18.8
+separate
+SO–Single Outlet Administrative Entity 7,546 81.2 9,295 100.0
+
+En termes de fréquences d'apparitions, nous observons que 100% des bibliothèques de ce cluster n'ont pas de collection audio.
+
+CC–City/County 87 0.9 87 0.9
+CI–Municipal Government (city, town, or village) 4,937 53.1 5,024 54.1
+CO–County/Parish 916 9.9 5,940 63.9
+LD–Library District 1,388 14.9 7,328 78.8
+MJ–Multi-jurisdictional 306 3.3 7,634 82.1
+NL–Native American Tribal Government 53 0.6 7,687 82.7
+NP–Non-profit Association or Agency 1,342 14.4 9,029 97.1
+OT–Other 90 1.0 9,119 98.1
+SD–School District
+
+
+HQ–Headquarters of a federation or cooperative 117 1.3 117 1.3
+ME–Member of a federation or cooperative 6,848 73.7 6,965 74.9
+NO–Not a member of a federation or cooperative
+
+
+[^3]: Claire Lermercier, Tutoriel FactoMineR pour l’analyse des correspondances multiples avec une petite annexe sur la classification automatique
+
+
+
+
+01–New England (CT ME MA NH RI VT)
+02–Mid East (DE DC MD NJ NY PA)
+03–Great Lakes (IL IN MI OH WI)
+04–Plains (IA KS MN MO NE ND SD)
+05–Southeast (AL AR FL GA KY LA MS NC SC TN VA WV)
+06–Soutwest (AZ NM OK TX)
+07–Rocky Mountains (CO ID MT UT WY)
+08–Far West (AK CA HI NV OR WA)
+09–Outlying Areas (AS GU MP PR VI)
